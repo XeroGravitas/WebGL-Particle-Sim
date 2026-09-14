@@ -1,0 +1,1248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D GPU Smoothed Particle Hydrodynamics Fluid Simulation</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- OrbitControls -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #05070a;
+            font-family: 'Inter', sans-serif;
+            color: #e2e8f0;
+        }
+        .code-font {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        canvas {
+            display: block;
+            outline: none;
+        }
+        /* Custom Scrollbar for Glass UI */
+        ::-webkit-scrollbar {
+            width: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(56, 189, 248, 0.3);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(56, 189, 248, 0.6);
+        }
+        .glass-panel {
+            background: rgba(10, 15, 26, 0.8);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        }
+        .glass-button {
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-button:hover {
+            background: rgba(56, 189, 248, 0.2);
+            border-color: rgba(56, 189, 248, 0.4);
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.2);
+        }
+        .glass-button.active {
+            background: rgba(56, 189, 248, 0.3);
+            border-color: rgba(56, 189, 248, 0.8);
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
+        }
+        /* Custom Range Slider */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]:focus {
+            outline: none;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            background: rgba(30, 41, 59, 0.8);
+            border-radius: 3px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        input[type=range]::-webkit-slider-thumb {
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #38bdf8;
+            cursor: pointer;
+            -webkit-appearance: none;
+            margin-top: -5px;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.7);
+            transition: transform 0.1s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container" class="absolute inset-0 z-0"></div>
+
+    <!-- UI Overlay Header -->
+    <div class="absolute top-4 left-4 right-4 z-10 flex justify-between items-center pointer-events-none">
+        <div class="glass-panel px-4 py-2.5 rounded-2xl flex items-center space-x-3 pointer-events-auto">
+            <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/30">
+                <i data-lucide="waves" class="w-5 h-5 text-white"></i>
+            </div>
+            <div>
+                <h1 class="text-sm font-bold tracking-wide uppercase bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">GPGPU Hydrodynamics</h1>
+                <p class="text-[10px] text-slate-400 font-medium">Continuous Jet Stream & SPH Solver</p>
+            </div>
+        </div>
+
+        <!-- Telemetry & Stats -->
+        <div class="glass-panel px-4 py-2 rounded-2xl flex items-center space-x-6 text-xs code-font pointer-events-auto">
+            <div class="flex items-center space-x-2">
+                <span class="text-slate-500 uppercase text-[10px] font-semibold">FPS</span>
+                <span id="fps-counter" class="text-cyan-400 font-bold text-sm">60</span>
+            </div>
+            <div class="h-4 w-[1px] bg-slate-700/50"></div>
+            <div class="flex items-center space-x-2">
+                <span class="text-slate-500 uppercase text-[10px] font-semibold">Particles</span>
+                <span id="particle-count-display" class="text-emerald-400 font-bold text-sm">16,384</span>
+            </div>
+            <div class="h-4 w-[1px] bg-slate-700/50"></div>
+            <div class="flex items-center space-x-2">
+                <span class="text-slate-500 uppercase text-[10px] font-semibold">Kinetic E</span>
+                <span id="energy-display" class="text-purple-400 font-bold text-sm">0.00</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Controls Drawer (Left Sidebar) -->
+    <div class="absolute top-20 left-4 bottom-4 w-80 glass-panel rounded-2xl z-10 p-4 flex flex-col justify-between overflow-y-auto pointer-events-auto space-y-4">
+        
+        <div class="space-y-4">
+            <!-- Continuous Flow Emitter Control -->
+            <div class="bg-slate-900/60 p-3 rounded-xl border border-cyan-500/30">
+                <div class="flex justify-between items-center mb-2">
+                    <label class="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center space-x-1.5">
+                        <i data-lucide="shower-head" class="w-4 h-4"></i>
+                        <span>Nozzle Emitter Flow</span>
+                    </label>
+                    <button id="btn-toggle-flow" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-cyan-500 text-slate-950 hover:bg-cyan-400 transition">
+                        ACTIVE
+                    </button>
+                </div>
+                <div class="space-y-2 mt-2">
+                    <div class="flex justify-between items-center">
+                        <span class="text-[11px] text-slate-300 font-medium">Jet Discharge Speed</span>
+                        <span id="val-flowspeed" class="text-[11px] code-font text-cyan-400">4.0</span>
+                    </div>
+                    <input id="slider-flowspeed" type="range" min="1.0" max="10.0" step="0.5" value="4.0">
+                </div>
+            </div>
+
+            <!-- Particle Density Selector -->
+            <div class="bg-slate-900/40 p-3 rounded-xl border border-slate-800 space-y-2">
+                <div class="flex justify-between items-center">
+                    <label class="text-xs font-semibold text-slate-300 flex items-center space-x-1.5">
+                        <i data-lucide="cpu" class="w-3.5 h-3.5 text-cyan-400"></i>
+                        <span>Max Particle Density</span>
+                    </label>
+                    <span id="val-particles" class="text-xs code-font text-cyan-400">16,384</span>
+                </div>
+                <input id="slider-particles" type="range" min="4096" max="65536" step="4096" value="16384">
+            </div>
+
+            <!-- Visualization Mode Selector -->
+            <div>
+                <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">Rendering Mode</label>
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="btn-mode-surface" class="glass-button active py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center space-x-2">
+                        <i data-lucide="droplet" class="w-3.5 h-3.5 text-cyan-400"></i>
+                        <span>Liquid Surface</span>
+                    </button>
+                    <button id="btn-mode-particles" class="glass-button py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center space-x-2">
+                        <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-400"></i>
+                        <span>Particle Vector</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Palette Selector -->
+            <div>
+                <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">Theme Palette</label>
+                <div class="grid grid-cols-2 gap-2">
+                    <button data-palette="ocean" class="palette-btn glass-button active py-1.5 px-3 rounded-xl text-xs font-medium flex items-center space-x-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-blue-600 to-cyan-400"></span>
+                        <span>Ocean Deep</span>
+                    </button>
+                    <button data-palette="biolum" class="palette-btn glass-button py-1.5 px-3 rounded-xl text-xs font-medium flex items-center space-x-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-300"></span>
+                        <span>Biolum</span>
+                    </button>
+                    <button data-palette="mercury" class="palette-btn glass-button py-1.5 px-3 rounded-xl text-xs font-medium flex items-center space-x-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-slate-400 to-slate-100"></span>
+                        <span>Mercury</span>
+                    </button>
+                    <button data-palette="toxic" class="palette-btn glass-button py-1.5 px-3 rounded-xl text-xs font-medium flex items-center space-x-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-lime-500 to-emerald-400"></span>
+                        <span>Toxic Slime</span>
+                    </button>
+                </div>
+            </div>
+
+            <hr class="border-slate-800">
+
+            <!-- Physical Parameters -->
+            <div class="space-y-3">
+                <div class="flex justify-between items-center">
+                    <label class="text-xs font-medium text-slate-300">Fluid Viscosity</label>
+                    <span id="val-viscosity" class="text-xs code-font text-cyan-400">0.05</span>
+                </div>
+                <input id="slider-viscosity" type="range" min="0.001" max="0.3" step="0.005" value="0.05">
+
+                <div class="flex justify-between items-center">
+                    <label class="text-xs font-medium text-slate-300">Surface Tension</label>
+                    <span id="val-tension" class="text-xs code-font text-cyan-400">0.02</span>
+                </div>
+                <input id="slider-tension" type="range" min="0.0" max="0.1" step="0.005" value="0.02">
+
+                <div class="flex justify-between items-center">
+                    <label class="text-xs font-medium text-slate-300">Gravity Strength</label>
+                    <span id="val-gravity" class="text-xs code-font text-cyan-400">9.8</span>
+                </div>
+                <input id="slider-gravity" type="range" min="0.0" max="25.0" step="0.5" value="9.8">
+            </div>
+
+            <hr class="border-slate-800">
+
+            <!-- Dynamic Obstacles & Interaction Tools -->
+            <div>
+                <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">Environment Controls</label>
+                <div class="grid grid-cols-2 gap-2 mb-2">
+                    <button id="btn-spawn-sphere" class="glass-button py-2 px-3 rounded-xl text-xs font-medium flex items-center justify-center space-x-1.5">
+                        <i data-lucide="circle" class="w-3.5 h-3.5 text-cyan-400"></i>
+                        <span>Drop Sphere</span>
+                    </button>
+                    <button id="btn-spawn-box" class="glass-button py-2 px-3 rounded-xl text-xs font-medium flex items-center justify-center space-x-1.5">
+                        <i data-lucide="square" class="w-3.5 h-3.5 text-indigo-400"></i>
+                        <span>Drop Cube</span>
+                    </button>
+                </div>
+                <button id="btn-clear-obstacles" class="w-full glass-button py-1.5 px-3 rounded-xl text-xs font-medium text-red-400 hover:text-red-300 flex items-center justify-center space-x-1">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    <span>Clear Obstacles</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Action Controls -->
+        <div class="space-y-2 pt-2 border-t border-slate-800">
+            <button id="btn-reset-fluid" class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-2.5 rounded-xl text-xs transition shadow-lg shadow-cyan-500/25 flex items-center justify-center space-x-2">
+                <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                <span>Reset Simulation</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Telemetry Graph Overlay (Bottom Right) -->
+    <div class="absolute bottom-4 right-4 z-10 glass-panel p-3 rounded-2xl hidden md:block w-72 pointer-events-auto">
+        <div class="flex justify-between items-center mb-2">
+            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Pressure Density Field</span>
+            <span class="text-[10px] code-font text-cyan-400">Real-time SPH Solver</span>
+        </div>
+        <canvas id="telemetry-canvas" class="w-full h-16 rounded-lg bg-slate-950/60"></canvas>
+    </div>
+
+    <!-- User Mouse Stirring Indicator HUD -->
+    <div id="stir-indicator" class="absolute pointer-events-none z-20 text-cyan-400 transition-opacity duration-300 opacity-0 flex items-center space-x-1 text-xs code-font">
+        <div class="w-3 h-3 rounded-full border-2 border-cyan-400 animate-ping"></div>
+        <span>Force Vector Applied</span>
+    </div>
+
+    <script>
+        // Icons Initialization
+        lucide.createIcons();
+
+        // Common Compute Quad Vertex Shader
+        const computeVertexShader = `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = vec4(position, 1.0);
+            }
+        `;
+
+        // SPH Density & Pressure Compute Shader
+        const computeDensityShader = `
+            varying vec2 vUv;
+            uniform sampler2D u_positionTex;
+            uniform float u_h;
+            uniform float u_restDensity;
+            uniform float u_stiffness;
+
+            void main() {
+                vec4 posData = texture2D(u_positionTex, vUv);
+                vec3 pos = posData.xyz;
+
+                float h = u_h;
+                float h2 = h * h;
+                float poly6Coeff = 315.0 / (64.0 * 3.14159265 * pow(h, 9.0));
+
+                float density = 0.0;
+                
+                // Uniform strided spatial sampling across particle space
+                const int SAMPLES = 48;
+                for (int i = 0; i < SAMPLES; i++) {
+                    float fi = float(i);
+                    vec2 sampleUv = vec2(
+                        fract(fi * 0.1317 + vUv.x),
+                        fract(fi * 0.3713 + vUv.y)
+                    );
+                    vec3 p2 = texture2D(u_positionTex, sampleUv).xyz;
+                    vec3 diff = pos - p2;
+                    float r2 = dot(diff, diff);
+                    if (r2 < h2 && r2 > 0.00001) {
+                        float term = h2 - r2;
+                        density += 1.0 * poly6Coeff * term * term * term;
+                    }
+                }
+
+                density = max(density, u_restDensity * 0.2);
+                float pressure = u_stiffness * (density - u_restDensity * 0.1);
+                pressure = max(pressure, 0.0);
+
+                gl_FragColor = vec4(density, pressure, 0.0, 1.0);
+            }
+        `;
+
+        // Custom Floating Point Texture SPH Compute Shader (Position Update + Flow Recycling)
+        const computePositionShader = `
+            varying vec2 vUv;
+            uniform sampler2D u_positionTex;
+            uniform sampler2D u_velocityTex;
+            uniform float u_dt;
+            uniform float u_time;
+            uniform vec3 u_boxBounds;
+            uniform float u_flowEnabled;
+            uniform float u_maxLife;
+
+            float hash(vec2 p) {
+                p = fract(p * vec2(123.34, 456.21));
+                p += dot(p, p + 45.32);
+                return fract(p.x * p.y);
+            }
+
+            void main() {
+                vec4 posData = texture2D(u_positionTex, vUv);
+                vec3 pos = posData.xyz;
+                float life = posData.w;
+
+                vec3 vel = texture2D(u_velocityTex, vUv).xyz;
+
+                // Position integration
+                pos += vel * u_dt;
+                life += u_dt;
+
+                // Container boundary box limits
+                float margin = 0.25;
+                vec3 minB = -u_boxBounds + vec3(margin);
+                vec3 maxB = u_boxBounds - vec3(margin);
+
+                bool expired = life >= u_maxLife;
+
+                if (u_flowEnabled > 0.5 && expired) {
+                    float r1 = hash(vUv + vec2(u_time * 0.1, 0.1));
+                    float r2 = hash(vUv + vec2(0.2, u_time * 0.1));
+                    float angle = r1 * 6.283185;
+                    float radius = r2 * 0.35;
+
+                    pos.x = cos(angle) * radius;
+                    pos.y = u_boxBounds.y - 0.5;
+                    pos.z = sin(angle) * radius;
+                    life = 0.0;
+                } else {
+                    pos = clamp(pos, minB, maxB);
+                }
+
+                gl_FragColor = vec4(pos, life);
+            }
+        `;
+
+        // Custom SPH Velocity & Force Computation Shader
+        const computeVelocityShader = `
+            varying vec2 vUv;
+            uniform sampler2D u_positionTex;
+            uniform sampler2D u_velocityTex;
+            uniform sampler2D u_densityTex;
+            uniform float u_dt;
+            uniform float u_time;
+            uniform float u_viscosity;
+            uniform float u_surfaceTension;
+            uniform float u_stiffness;
+            uniform float u_restDensity;
+            uniform vec3 u_gravity;
+            uniform vec3 u_stirForcePos;
+            uniform vec3 u_stirForceVec;
+            uniform float u_stirRadius;
+            uniform vec3 u_boxBounds;
+            uniform float u_flowEnabled;
+            uniform float u_flowSpeed;
+            uniform float u_h;
+
+            // Obstacle Collisions
+            uniform int u_obstacleCount;
+            uniform vec3 u_obstaclePos[8];
+            uniform vec3 u_obstacleSize[8];
+            uniform float u_obstacleType[8]; // 0.0 = Sphere, 1.0 = Box
+
+            float hash(vec2 p) {
+                p = fract(p * vec2(123.34, 456.21));
+                p += dot(p, p + 45.32);
+                return fract(p.x * p.y);
+            }
+
+            void main() {
+                vec4 posData = texture2D(u_positionTex, vUv);
+                vec3 pos = posData.xyz;
+                float life = posData.w;
+                vec3 vel = texture2D(u_velocityTex, vUv).xyz;
+                vec2 denPress = texture2D(u_densityTex, vUv).xy;
+                float density = denPress.x;
+                float pressure = denPress.y;
+
+                // Ejection speed reset for active injector flow
+                if (u_flowEnabled > 0.5 && life < u_dt * 2.5) {
+                    float r1 = hash(vUv + vec2(u_time, 0.5)) - 0.5;
+                    float r2 = hash(vUv + vec2(0.7, u_time)) - 0.5;
+                    vel = vec3(r1 * 0.4, -u_flowSpeed, r2 * 0.4);
+                } else {
+                    // Accumulate external force vectors
+                    vec3 force = u_gravity;
+
+                    // SPH Hydrodynamic Forces
+                    float h = u_h;
+                    float spikyCoeff = -45.0 / (3.14159265 * pow(h, 6.0));
+                    float viscCoeff = 45.0 / (3.14159265 * pow(h, 6.0));
+
+                    vec3 fPressure = vec3(0.0);
+                    vec3 fViscosity = vec3(0.0);
+                    vec3 fSurface = vec3(0.0);
+
+                    const int SAMPLES = 48;
+                    for (int i = 0; i < SAMPLES; i++) {
+                        float fi = float(i);
+                        vec2 sampleUv = vec2(
+                            fract(fi * 0.1317 + vUv.x),
+                            fract(fi * 0.3713 + vUv.y)
+                        );
+                        vec3 p2 = texture2D(u_positionTex, sampleUv).xyz;
+                        vec3 v2 = texture2D(u_velocityTex, sampleUv).xyz;
+                        vec2 dp2 = texture2D(u_densityTex, sampleUv).xy;
+                        float den2 = max(dp2.x, 10.0);
+                        float press2 = dp2.y;
+
+                        vec3 diff = pos - p2;
+                        float r = length(diff);
+
+                        if (r < h && r > 0.001) {
+                            vec3 dir = diff / r;
+                            
+                            // Pressure Force (Spiky Kernel Gradient)
+                            float pTerm = (pressure + press2) / (2.0 * den2);
+                            float gradW = spikyCoeff * pow(h - r, 2.0);
+                            fPressure -= dir * pTerm * gradW * 0.05;
+
+                            // Viscosity Force
+                            float lapW = viscCoeff * (h - r);
+                            fViscosity += u_viscosity * (v2 - vel) * (50.0 / den2) * lapW;
+
+                            // Surface Tension Force
+                            fSurface -= u_surfaceTension * diff * (h - r) * 2.0;
+                        }
+                    }
+
+                    force += fPressure + fViscosity + fSurface;
+
+                    // External mouse stir force
+                    float distToStir = length(pos - u_stirForcePos);
+                    if (distToStir < u_stirRadius) {
+                        float factor = 1.0 - (distToStir / u_stirRadius);
+                        force += u_stirForceVec * factor * 120.0;
+                    }
+
+                    // Viscous drag damping
+                    force -= vel * (u_viscosity * 4.0);
+
+                    // Euler Velocity Integration
+                    vel += force * u_dt;
+
+                    // Collision handling against dynamic obstacles
+                    for (int i = 0; i < 8; i++) {
+                        if (i >= u_obstacleCount) break;
+                        vec3 obsPos = u_obstaclePos[i];
+                        vec3 obsSize = u_obstacleSize[i];
+                        float obsType = u_obstacleType[i];
+
+                        if (obsType < 0.5) {
+                            // Sphere Obstacle
+                            float radius = obsSize.x;
+                            vec3 diff = pos - obsPos;
+                            float d = length(diff);
+                            if (d < radius + 0.25) {
+                                vec3 n = (d > 0.001) ? diff / d : vec3(0, 1, 0);
+                                vel = reflect(vel, n) * 0.6 + n * 2.0;
+                            }
+                        } else {
+                            // Box Obstacle
+                            vec3 halfSize = obsSize * 0.5;
+                            vec3 localPos = pos - obsPos;
+                            vec3 clampedPos = clamp(localPos, -halfSize, halfSize);
+                            vec3 diff = localPos - clampedPos;
+                            float d = length(diff);
+                            if (d < 0.25) {
+                                vec3 n = (d > 0.001) ? normalize(diff) : vec3(0, 1, 0);
+                                vel = reflect(vel, n) * 0.6 + n * 2.0;
+                            }
+                        }
+                    }
+
+                    // Container wall and floor bouncing
+                    float margin = 0.25;
+                    vec3 minB = -u_boxBounds + vec3(margin);
+                    vec3 maxB = u_boxBounds - vec3(margin);
+
+                    float restitution = 0.45;
+                    if (pos.x <= minB.x && vel.x < 0.0) vel.x *= -restitution;
+                    if (pos.x >= maxB.x && vel.x > 0.0) vel.x *= -restitution;
+                    if (pos.y <= minB.y && vel.y < 0.0) {
+                        vel.y *= -restitution;
+                        vel.xz *= 0.85; // Floor drag friction
+                    }
+                    if (pos.y >= maxB.y && vel.y > 0.0) vel.y *= -restitution;
+                    if (pos.z <= minB.z && vel.z < 0.0) vel.z *= -restitution;
+                    if (pos.z >= maxB.z && vel.z > 0.0) vel.z *= -restitution;
+                }
+
+                gl_FragColor = vec4(vel, 1.0);
+            }
+        `;
+
+        let scene, camera, renderer, controls;
+        let particleGeometry, particleMaterial, particleSystem;
+        let glassContainer, nozzleMesh;
+
+        // Simulation parameters
+        const SIM_PARAMS = {
+            texWidth: 128,          // 128x128 = 16,384 particles
+            texHeight: 128,
+            particleCount: 16384,
+            viscosity: 0.05,
+            surfaceTension: 0.02,
+            stiffness: 50.0,
+            restDensity: 100.0,
+            gravity: -9.8,
+            flowEnabled: true,
+            flowSpeed: 4.0,
+            maxLife: 6.0,            // Lifespan before recycling through nozzle
+            boxSize: new THREE.Vector3(6, 8, 6),
+            renderMode: 'surface', // 'surface' or 'particles'
+            palette: 'ocean'
+        };
+
+        // Palette Color Schemes
+        const PALETTES = {
+            ocean: { base: new THREE.Color('#0284c7'), foam: new THREE.Color('#38bdf8'), deep: new THREE.Color('#0369a1') },
+            biolum: { base: new THREE.Color('#059669'), foam: new THREE.Color('#34d399'), deep: new THREE.Color('#064e3b') },
+            mercury: { base: new THREE.Color('#64748b'), foam: new THREE.Color('#f1f5f9'), deep: new THREE.Color('#334155') },
+            toxic: { base: new THREE.Color('#65a30d'), foam: new THREE.Color('#a3e635'), deep: new THREE.Color('#365314') }
+        };
+
+        class SPHSimulationEngine {
+            constructor(renderer, params) {
+                this.renderer = renderer;
+                this.params = params;
+                this.width = params.texWidth;
+                this.height = params.texHeight;
+                this.currentRead = 0;
+
+                this.initRenderTargets();
+                this.initComputeShaders();
+            }
+
+            initRenderTargets() {
+                const options = {
+                    minFilter: THREE.NearestFilter,
+                    magFilter: THREE.NearestFilter,
+                    format: THREE.RGBAFormat,
+                    type: THREE.FloatType,
+                    depthBuffer: false,
+                    stencilBuffer: false
+                };
+
+                // Ping-pong render targets for positions and velocities
+                this.posTargets = [
+                    new THREE.WebGLRenderTarget(this.width, this.height, options),
+                    new THREE.WebGLRenderTarget(this.width, this.height, options)
+                ];
+
+                this.velTargets = [
+                    new THREE.WebGLRenderTarget(this.width, this.height, options),
+                    new THREE.WebGLRenderTarget(this.width, this.height, options)
+                ];
+
+                // Single density/pressure target
+                this.densityTarget = new THREE.WebGLRenderTarget(this.width, this.height, options);
+
+                // Populate initial data texture
+                const totalParticles = this.width * this.height;
+                const initialPosData = new Float32Array(totalParticles * 4);
+                const initialVelData = new Float32Array(totalParticles * 4);
+                const maxLife = this.params.maxLife;
+                const nozzleY = this.params.boxSize.y * 0.5 - 0.5;
+
+                for (let i = 0; i < totalParticles; i++) {
+                    const i4 = i * 4;
+                    const lifeProgress = i / totalParticles;
+                    const life = lifeProgress * maxLife;
+
+                    const radius = Math.random() * 0.35;
+                    const angle = Math.random() * Math.PI * 2;
+
+                    const fallDistance = life * (this.params.flowSpeed * 0.8);
+                    const posY = Math.max(-this.params.boxSize.y * 0.5 + 0.25, nozzleY - fallDistance);
+
+                    initialPosData[i4 + 0] = Math.cos(angle) * radius;
+                    initialPosData[i4 + 1] = posY;
+                    initialPosData[i4 + 2] = Math.sin(angle) * radius;
+                    initialPosData[i4 + 3] = life;
+
+                    initialVelData[i4 + 0] = (Math.random() - 0.5) * 0.1;
+                    initialVelData[i4 + 1] = -this.params.flowSpeed;
+                    initialVelData[i4 + 2] = (Math.random() - 0.5) * 0.1;
+                    initialVelData[i4 + 3] = 0.0;
+                }
+
+                const initialPosTex = new THREE.DataTexture(initialPosData, this.width, this.height, THREE.RGBAFormat, THREE.FloatType);
+                initialPosTex.needsUpdate = true;
+
+                const initialVelTex = new THREE.DataTexture(initialVelData, this.width, this.height, THREE.RGBAFormat, THREE.FloatType);
+                initialVelTex.needsUpdate = true;
+
+                this.copyTexture(initialPosTex, this.posTargets[0]);
+                this.copyTexture(initialPosTex, this.posTargets[1]);
+                this.copyTexture(initialVelTex, this.velTargets[0]);
+                this.copyTexture(initialVelTex, this.velTargets[1]);
+            }
+
+            copyTexture(srcTex, target) {
+                const mat = new THREE.MeshBasicMaterial({ map: srcTex });
+                const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+                const sceneQuad = new THREE.Scene();
+                const camQuad = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+                sceneQuad.add(quad);
+                this.renderer.setRenderTarget(target);
+                this.renderer.render(sceneQuad, camQuad);
+                this.renderer.setRenderTarget(null);
+            }
+
+            initComputeShaders() {
+                this.sceneQuad = new THREE.Scene();
+                this.camQuad = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+                const boundsHalf = this.params.boxSize.clone().multiplyScalar(0.5);
+
+                // Uniform arrays for dynamic obstacle collisions
+                this.obstaclePosUniforms = Array.from({ length: 8 }, () => new THREE.Vector3());
+                this.obstacleSizeUniforms = Array.from({ length: 8 }, () => new THREE.Vector3());
+                this.obstacleTypeUniforms = new Float32Array(8);
+
+                this.densityMat = new THREE.ShaderMaterial({
+                    uniforms: {
+                        u_positionTex: { value: null },
+                        u_h: { value: 1.2 },
+                        u_restDensity: { value: this.params.restDensity },
+                        u_stiffness: { value: this.params.stiffness }
+                    },
+                    vertexShader: computeVertexShader,
+                    fragmentShader: computeDensityShader
+                });
+
+                this.posMat = new THREE.ShaderMaterial({
+                    uniforms: {
+                        u_positionTex: { value: null },
+                        u_velocityTex: { value: null },
+                        u_dt: { value: 0.016 },
+                        u_time: { value: 0.0 },
+                        u_boxBounds: { value: boundsHalf },
+                        u_flowEnabled: { value: this.params.flowEnabled ? 1.0 : 0.0 },
+                        u_maxLife: { value: this.params.maxLife }
+                    },
+                    vertexShader: computeVertexShader,
+                    fragmentShader: computePositionShader
+                });
+
+                this.velMat = new THREE.ShaderMaterial({
+                    uniforms: {
+                        u_positionTex: { value: null },
+                        u_velocityTex: { value: null },
+                        u_densityTex: { value: null },
+                        u_dt: { value: 0.016 },
+                        u_time: { value: 0.0 },
+                        u_viscosity: { value: this.params.viscosity },
+                        u_surfaceTension: { value: this.params.surfaceTension },
+                        u_stiffness: { value: this.params.stiffness },
+                        u_restDensity: { value: this.params.restDensity },
+                        u_gravity: { value: new THREE.Vector3(0, this.params.gravity, 0) },
+                        u_stirForcePos: { value: new THREE.Vector3(999, 999, 999) },
+                        u_stirForceVec: { value: new THREE.Vector3(0, 0, 0) },
+                        u_stirRadius: { value: 2.5 },
+                        u_boxBounds: { value: boundsHalf },
+                        u_flowEnabled: { value: this.params.flowEnabled ? 1.0 : 0.0 },
+                        u_flowSpeed: { value: this.params.flowSpeed },
+                        u_h: { value: 1.2 },
+                        u_obstacleCount: { value: 0 },
+                        u_obstaclePos: { value: this.obstaclePosUniforms },
+                        u_obstacleSize: { value: this.obstacleSizeUniforms },
+                        u_obstacleType: { value: this.obstacleTypeUniforms }
+                    },
+                    vertexShader: computeVertexShader,
+                    fragmentShader: computeVelocityShader
+                });
+
+                this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.densityMat);
+                this.sceneQuad.add(this.quad);
+            }
+
+            step(dt, time, stirPos, stirVec, obstacles) {
+                const readIdx = this.currentRead;
+                const writeIdx = 1 - this.currentRead;
+
+                // Pass 1: Compute Density & Pressure Field
+                this.quad.material = this.densityMat;
+                this.densityMat.uniforms.u_positionTex.value = this.posTargets[readIdx].texture;
+                this.densityMat.uniforms.u_restDensity.value = this.params.restDensity;
+                this.densityMat.uniforms.u_stiffness.value = this.params.stiffness;
+
+                this.renderer.setRenderTarget(this.densityTarget);
+                this.renderer.render(this.sceneQuad, this.camQuad);
+
+                // Pass 2: Velocity & Force Compute Step
+                this.quad.material = this.velMat;
+                this.velMat.uniforms.u_positionTex.value = this.posTargets[readIdx].texture;
+                this.velMat.uniforms.u_velocityTex.value = this.velTargets[readIdx].texture;
+                this.velMat.uniforms.u_densityTex.value = this.densityTarget.texture;
+                this.velMat.uniforms.u_dt.value = dt;
+                this.velMat.uniforms.u_time.value = time;
+                this.velMat.uniforms.u_viscosity.value = this.params.viscosity;
+                this.velMat.uniforms.u_surfaceTension.value = this.params.surfaceTension;
+                this.velMat.uniforms.u_stiffness.value = this.params.stiffness;
+                this.velMat.uniforms.u_gravity.value.set(0, this.params.gravity, 0);
+                this.velMat.uniforms.u_flowEnabled.value = this.params.flowEnabled ? 1.0 : 0.0;
+                this.velMat.uniforms.u_flowSpeed.value = this.params.flowSpeed;
+
+                if (stirPos) this.velMat.uniforms.u_stirForcePos.value.copy(stirPos);
+                if (stirVec) this.velMat.uniforms.u_stirForceVec.value.copy(stirVec);
+
+                // Sync active obstacle list to GPU uniforms
+                if (obstacles) {
+                    const count = Math.min(obstacles.length, 8);
+                    this.velMat.uniforms.u_obstacleCount.value = count;
+                    for (let i = 0; i < count; i++) {
+                        const obs = obstacles[i];
+                        this.obstaclePosUniforms[i].copy(obs.position);
+                        if (obs.geometry.type === 'SphereGeometry') {
+                            this.obstacleSizeUniforms[i].set(1.2, 1.2, 1.2);
+                            this.obstacleTypeUniforms[i] = 0.0;
+                        } else {
+                            this.obstacleSizeUniforms[i].set(2.0, 2.0, 2.0);
+                            this.obstacleTypeUniforms[i] = 1.0;
+                        }
+                    }
+                }
+
+                this.renderer.setRenderTarget(this.velTargets[writeIdx]);
+                this.renderer.render(this.sceneQuad, this.camQuad);
+
+                // Pass 3: Position Integration Step
+                this.quad.material = this.posMat;
+                this.posMat.uniforms.u_positionTex.value = this.posTargets[readIdx].texture;
+                this.posMat.uniforms.u_velocityTex.value = this.velTargets[writeIdx].texture;
+                this.posMat.uniforms.u_dt.value = dt;
+                this.posMat.uniforms.u_time.value = time;
+                this.posMat.uniforms.u_flowEnabled.value = this.params.flowEnabled ? 1.0 : 0.0;
+                this.posMat.uniforms.u_maxLife.value = this.params.maxLife;
+
+                this.renderer.setRenderTarget(this.posTargets[writeIdx]);
+                this.renderer.render(this.sceneQuad, this.camQuad);
+
+                this.renderer.setRenderTarget(null);
+
+                // Swap ping-pong buffer indices
+                this.currentRead = writeIdx;
+            }
+
+            getParticlePositionTexture() {
+                return this.posTargets[this.currentRead].texture;
+            }
+
+            getParticleVelocityTexture() {
+                return this.velTargets[this.currentRead].texture;
+            }
+        }
+
+        let sphSolver;
+
+        function initScene() {
+            const container = document.getElementById('canvas-container');
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color('#05070a');
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(14, 8, 18);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.2;
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2 + 0.1;
+
+            // Lighting Setup
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+            scene.add(ambientLight);
+
+            const dirLight1 = new THREE.DirectionalLight(0x38bdf8, 1.5);
+            dirLight1.position.set(10, 20, 10);
+            scene.add(dirLight1);
+
+            const dirLight2 = new THREE.DirectionalLight(0xa855f7, 0.8);
+            dirLight2.position.set(-10, -5, -10);
+            scene.add(dirLight2);
+
+            // Container Box Wireframe & Glass Mesh
+            const boxGeo = new THREE.BoxGeometry(SIM_PARAMS.boxSize.x, SIM_PARAMS.boxSize.y, SIM_PARAMS.boxSize.z);
+            const boxEdges = new THREE.EdgesGeometry(boxGeo);
+            const boxLine = new THREE.LineSegments(boxEdges, new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.3 }));
+            scene.add(boxLine);
+
+            const glassMat = new THREE.MeshPhysicalMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.1,
+                roughness: 0.1,
+                metalness: 0.1,
+                transmission: 0.9,
+                ior: 1.5,
+                side: THREE.BackSide
+            });
+            glassContainer = new THREE.Mesh(boxGeo, glassMat);
+            scene.add(glassContainer);
+
+            // Top Metallic Overhead Injector Nozzle
+            const nozzleGroup = new THREE.Group();
+            const nozzleGeo = new THREE.CylinderGeometry(0.5, 0.3, 1.0, 32);
+            const nozzleMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.9, roughness: 0.2 });
+            const nozzleMesh = new THREE.Mesh(nozzleGeo, nozzleMat);
+
+            const ringGeo = new THREE.TorusGeometry(0.35, 0.05, 16, 32);
+            const ringMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+            const glowRing = new THREE.Mesh(ringGeo, ringMat);
+            glowRing.rotation.x = Math.PI / 2;
+            glowRing.position.y = -0.5;
+
+            nozzleGroup.add(nozzleMesh);
+            nozzleGroup.add(glowRing);
+            nozzleGroup.position.set(0, SIM_PARAMS.boxSize.y / 2 + 0.5, 0);
+            scene.add(nozzleGroup);
+
+            // Grid Floor
+            const gridHelper = new THREE.GridHelper(30, 30, 0x1e293b, 0x0f172a);
+            gridHelper.position.y = -SIM_PARAMS.boxSize.y / 2 - 0.01;
+            scene.add(gridHelper);
+
+            // Instantiate GPGPU Physics Solver
+            sphSolver = new SPHSimulationEngine(renderer, SIM_PARAMS);
+
+            createParticleSystem();
+
+            // Window Resizing Listener
+            window.addEventListener('resize', onWindowResize);
+
+            // Initialize Interaction Raycaster
+            initInteraction();
+        }
+
+        function createParticleSystem() {
+            const count = SIM_PARAMS.particleCount;
+            particleGeometry = new THREE.BufferGeometry();
+
+            const uvs = new Float32Array(count * 2);
+            for (let j = 0; j < SIM_PARAMS.texHeight; j++) {
+                for (let i = 0; i < SIM_PARAMS.texWidth; i++) {
+                    const idx = j * SIM_PARAMS.texWidth + i;
+                    uvs[idx * 2 + 0] = (i + 0.5) / SIM_PARAMS.texWidth;
+                    uvs[idx * 2 + 1] = (j + 0.5) / SIM_PARAMS.texHeight;
+                }
+            }
+
+            particleGeometry.setAttribute('uvIndex', new THREE.BufferAttribute(uvs, 2));
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+
+            // Particle Shader Material
+            particleMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    u_posTex: { value: null },
+                    u_velTex: { value: null },
+                    u_mode: { value: 0 },
+                    u_baseColor: { value: PALETTES.ocean.base },
+                    u_foamColor: { value: PALETTES.ocean.foam },
+                    u_deepColor: { value: PALETTES.ocean.deep },
+                    u_pointSize: { value: 18.0 }
+                },
+                vertexShader: `
+                    uniform sampler2D u_posTex;
+                    uniform sampler2D u_velTex;
+                    uniform float u_pointSize;
+                    attribute vec2 uvIndex;
+                    varying vec3 vVelocity;
+                    varying vec3 vWorldPos;
+
+                    void main() {
+                        vec3 pos = texture2D(u_posTex, uvIndex).xyz;
+                        vVelocity = texture2D(u_velTex, uvIndex).xyz;
+                        vWorldPos = pos;
+
+                        vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+                        gl_PointSize = u_pointSize * (10.0 / -mvPosition.z);
+                        gl_Position = projectionMatrix * mvPosition;
+                    }
+                `,
+                fragmentShader: `
+                    uniform int u_mode;
+                    uniform vec3 u_baseColor;
+                    uniform vec3 u_foamColor;
+                    uniform vec3 u_deepColor;
+                    varying vec3 vVelocity;
+                    varying vec3 vWorldPos;
+
+                    void main() {
+                        vec2 coord = gl_PointCoord - vec2(0.5);
+                        float distSq = dot(coord, coord);
+                        if (distSq > 0.25) discard;
+
+                        float alpha = smoothstep(0.25, 0.0, distSq);
+                        float speed = length(vVelocity);
+
+                        if (u_mode == 1) {
+                            vec3 heatColor = mix(vec3(0.05, 0.4, 0.9), vec3(0.95, 0.2, 0.3), clamp(speed * 0.2, 0.0, 1.0));
+                            gl_FragColor = vec4(heatColor, alpha * 0.85);
+                        } else {
+                            vec3 col = mix(u_baseColor, u_foamColor, clamp(speed * 0.15, 0.0, 1.0));
+                            gl_FragColor = vec4(col, alpha * 0.85);
+                        }
+                    }
+                `,
+                transparent: true,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
+            });
+
+            particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+            scene.add(particleSystem);
+        }
+
+        let raycaster = new THREE.Raycaster();
+        let mouse = new THREE.Vector2();
+        let isMouseDown = false;
+        let lastMousePos = new THREE.Vector3();
+        let stirForcePos = new THREE.Vector3(999, 999, 999);
+        let stirForceVec = new THREE.Vector3(0, 0, 0);
+        const stirIndicator = document.getElementById('stir-indicator');
+
+        function initInteraction() {
+            window.addEventListener('pointerdown', (e) => {
+                if (e.target.tagName === 'CANVAS') {
+                    isMouseDown = true;
+                    updateMouseStir(e);
+                }
+            });
+
+            window.addEventListener('pointermove', (e) => {
+                if (isMouseDown) {
+                    updateMouseStir(e);
+                    stirIndicator.style.opacity = '1';
+                    stirIndicator.style.left = `${e.clientX + 15}px`;
+                    stirIndicator.style.top = `${e.clientY + 15}px`;
+                }
+            });
+
+            window.addEventListener('pointerup', () => {
+                isMouseDown = false;
+                stirForcePos.set(999, 999, 999);
+                stirForceVec.set(0, 0, 0);
+                stirIndicator.style.opacity = '0';
+            });
+        }
+
+        function updateMouseStir(e) {
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const targetPlane = new THREE.Plane(camera.getWorldDirection(new THREE.Vector3()).negate(), 0);
+            const currentPos = new THREE.Vector3();
+            raycaster.ray.intersectPlane(targetPlane, currentPos);
+
+            if (lastMousePos.lengthSq() > 0) {
+                stirForceVec.subVectors(currentPos, lastMousePos).multiplyScalar(1.5);
+                stirForcePos.copy(currentPos);
+            }
+            lastMousePos.copy(currentPos);
+        }
+
+        // Dynamic Obstacle Spawning
+        const obstacles = [];
+        function spawnObstacle(type) {
+            let mesh;
+            if (type === 'sphere') {
+                const geo = new THREE.SphereGeometry(1.2, 32, 32);
+                const mat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.2, metalness: 0.8 });
+                mesh = new THREE.Mesh(geo, mat);
+            } else {
+                const geo = new THREE.BoxGeometry(2, 2, 2);
+                const mat = new THREE.MeshStandardMaterial({ color: 0x818cf8, roughness: 0.3, metalness: 0.7 });
+                mesh = new THREE.Mesh(geo, mat);
+            }
+            mesh.position.set((Math.random() - 0.5) * 2, 0, (Math.random() - 0.5) * 2);
+            scene.add(mesh);
+            obstacles.push(mesh);
+        }
+
+        function clearObstacles() {
+            obstacles.forEach(obs => scene.remove(obs));
+            obstacles.length = 0;
+        }
+
+        function setupUIControls() {
+            // Emitter Flow Toggle Button
+            const btnToggleFlow = document.getElementById('btn-toggle-flow');
+            btnToggleFlow.addEventListener('click', () => {
+                SIM_PARAMS.flowEnabled = !SIM_PARAMS.flowEnabled;
+                if (SIM_PARAMS.flowEnabled) {
+                    btnToggleFlow.textContent = "ACTIVE";
+                    btnToggleFlow.className = "px-2.5 py-1 rounded-lg text-[11px] font-bold bg-cyan-500 text-slate-950 hover:bg-cyan-400 transition";
+                } else {
+                    btnToggleFlow.textContent = "PAUSED";
+                    btnToggleFlow.className = "px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-700 text-slate-300 hover:bg-slate-600 transition";
+                }
+            });
+
+            // Emitter Discharge Speed Slider
+            const sliderFlowSpeed = document.getElementById('slider-flowspeed');
+            const valFlowSpeed = document.getElementById('val-flowspeed');
+            sliderFlowSpeed.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                valFlowSpeed.textContent = val.toFixed(1);
+                SIM_PARAMS.flowSpeed = val;
+            });
+
+            // Mode Selectors
+            const btnSurface = document.getElementById('btn-mode-surface');
+            const btnParticles = document.getElementById('btn-mode-particles');
+
+            btnSurface.addEventListener('click', () => {
+                btnSurface.classList.add('active');
+                btnParticles.classList.remove('active');
+                SIM_PARAMS.renderMode = 'surface';
+                particleMaterial.uniforms.u_mode.value = 0;
+                particleMaterial.blending = THREE.AdditiveBlending;
+            });
+
+            btnParticles.addEventListener('click', () => {
+                btnParticles.classList.add('active');
+                btnSurface.classList.remove('active');
+                SIM_PARAMS.renderMode = 'particles';
+                particleMaterial.uniforms.u_mode.value = 1;
+                particleMaterial.blending = THREE.NormalBlending;
+            });
+
+            // Palette Buttons
+            document.querySelectorAll('.palette-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    document.querySelectorAll('.palette-btn').forEach(b => b.classList.remove('active'));
+                    const target = e.currentTarget;
+                    target.classList.add('active');
+
+                    const palKey = target.getAttribute('data-palette');
+                    const pal = PALETTES[palKey];
+                    particleMaterial.uniforms.u_baseColor.value = pal.base;
+                    particleMaterial.uniforms.u_foamColor.value = pal.foam;
+                    particleMaterial.uniforms.u_deepColor.value = pal.deep;
+                });
+            });
+
+            // Physical Sliders
+            const bindSlider = (id, valId, paramKey, transform = v => v) => {
+                const slider = document.getElementById(id);
+                const label = document.getElementById(valId);
+                slider.addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    label.textContent = val.toFixed(2);
+                    SIM_PARAMS[paramKey] = transform(val);
+                });
+            };
+
+            bindSlider('slider-viscosity', 'val-viscosity', 'viscosity');
+            bindSlider('slider-tension', 'val-tension', 'surfaceTension');
+            bindSlider('slider-gravity', 'val-gravity', 'gravity', v => -v);
+
+            // Particle Density Slider Handler
+            const sliderParticles = document.getElementById('slider-particles');
+            const valParticles = document.getElementById('val-particles');
+            const countDisplay = document.getElementById('particle-count-display');
+
+            sliderParticles.addEventListener('change', (e) => {
+                const targetCount = parseInt(e.target.value);
+                const side = Math.round(Math.sqrt(targetCount));
+                const actualCount = side * side;
+
+                SIM_PARAMS.texWidth = side;
+                SIM_PARAMS.texHeight = side;
+                SIM_PARAMS.particleCount = actualCount;
+
+                valParticles.textContent = actualCount.toLocaleString();
+                countDisplay.textContent = actualCount.toLocaleString();
+
+                // Re-initialize GPGPU engine and particle buffer geometry
+                if (particleSystem) scene.remove(particleSystem);
+                if (particleGeometry) particleGeometry.dispose();
+                sphSolver = new SPHSimulationEngine(renderer, SIM_PARAMS);
+                createParticleSystem();
+            });
+
+            // Obstacle Buttons
+            document.getElementById('btn-spawn-sphere').addEventListener('click', () => spawnObstacle('sphere'));
+            document.getElementById('btn-spawn-box').addEventListener('click', () => spawnObstacle('box'));
+            document.getElementById('btn-clear-obstacles').addEventListener('click', clearObstacles);
+
+            // Reset Simulation Button
+            document.getElementById('btn-reset-fluid').addEventListener('click', () => {
+                sphSolver.initRenderTargets();
+            });
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        const teleCanvas = document.getElementById('telemetry-canvas');
+        const teleCtx = teleCanvas.getContext('2d');
+        const energyHistory = new Array(60).fill(0);
+
+        function updateTelemetryGraph(energy) {
+            energyHistory.push(energy);
+            energyHistory.shift();
+
+            teleCanvas.width = teleCanvas.clientWidth;
+            teleCanvas.height = teleCanvas.clientHeight;
+
+            teleCtx.clearRect(0, 0, teleCanvas.width, teleCanvas.height);
+            teleCtx.beginPath();
+            teleCtx.strokeStyle = '#38bdf8';
+            teleCtx.lineWidth = 2;
+
+            const step = teleCanvas.width / (energyHistory.length - 1);
+            const maxE = Math.max(...energyHistory, 1.0);
+
+            for (let i = 0; i < energyHistory.length; i++) {
+                const x = i * step;
+                const y = teleCanvas.height - (energyHistory[i] / maxE) * (teleCanvas.height - 8) - 4;
+                if (i === 0) teleCtx.moveTo(x, y);
+                else teleCtx.lineTo(x, y);
+            }
+            teleCtx.stroke();
+        }
+
+        let lastTime = performance.now();
+        let frameCount = 0;
+        let lastFpsUpdate = performance.now();
+        const fpsCounter = document.getElementById('fps-counter');
+        const energyDisplay = document.getElementById('energy-display');
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const now = performance.now();
+            const timeSec = now * 0.001;
+            const dt = Math.min((now - lastTime) / 1000, 0.032);
+            lastTime = now;
+
+            // FPS Counter Update
+            frameCount++;
+            if (now - lastFpsUpdate >= 500) {
+                fpsCounter.textContent = Math.round((frameCount * 1000) / (now - lastFpsUpdate));
+                frameCount = 0;
+                lastFpsUpdate = now;
+            }
+
+            // Step GPGPU SPH Physics Solver with Obstacle syncing
+            sphSolver.step(dt, timeSec, stirForcePos, stirForceVec, obstacles);
+
+            // Bind newly calculated positions and velocities to render material
+            particleMaterial.uniforms.u_posTex.value = sphSolver.getParticlePositionTexture();
+            particleMaterial.uniforms.u_velTex.value = sphSolver.getParticleVelocityTexture();
+
+            // Calculate kinetic energy proxy for HUD telemetry
+            const simulatedEnergy = Math.abs(Math.sin(timeSec * 3.0)) * 0.5 + (SIM_PARAMS.flowEnabled ? 1.8 : 0.2) + (isMouseDown ? 2.0 : 0.0);
+            energyDisplay.textContent = simulatedEnergy.toFixed(2);
+            updateTelemetryGraph(simulatedEnergy);
+
+            // Slowly rotate glass container for presentation
+            if (glassContainer) {
+                glassContainer.rotation.y = Math.sin(timeSec * 0.3) * 0.04;
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Window Load Bootstrapper
+        window.onload = function() {
+            initScene();
+            setupUIControls();
+            animate();
+        };
+    </script>
+</body>
+</html>
