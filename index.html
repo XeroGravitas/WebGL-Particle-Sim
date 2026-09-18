@@ -587,7 +587,7 @@
             flowEnabled: true,
             flowSpeed: 4.0,
             maxLife: 6.0,            // Lifespan before recycling through nozzle
-            boxSize: new THREE.Vector3(6, 8, 6),
+            boxSize: new THREE.Vector3(12, 8, 12),
             renderMode: 'surface', // 'surface' or 'particles'
             palette: 'ocean'
         };
@@ -950,7 +950,7 @@
                     u_baseColor: { value: PALETTES.ocean.base },
                     u_foamColor: { value: PALETTES.ocean.foam },
                     u_deepColor: { value: PALETTES.ocean.deep },
-                    u_pointSize: { value: 9.0 }
+                    u_pointSize: { value: 12.0 }
                 },
                 vertexShader: `
                     uniform sampler2D u_posTex;
@@ -1221,7 +1221,7 @@
             // Adjust particle point sizes responsively on mobile
             if (particleMaterial) {
                 const isMobile = window.innerWidth < 768;
-                particleMaterial.uniforms.u_pointSize.value = isMobile ? 9.0 : 9.0;
+                particleMaterial.uniforms.u_pointSize.value = isMobile ? 12.0 : 12.0;
             }
         }
 
