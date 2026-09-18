@@ -239,15 +239,15 @@
             <div class="space-y-3">
                 <div class="flex justify-between items-center">
                     <label class="text-xs font-medium text-slate-300">Fluid Viscosity</label>
-                    <span id="val-viscosity" class="text-xs code-font text-cyan-400">0.05</span>
+                    <span id="val-viscosity" class="text-xs code-font text-cyan-400">0.10</span>
                 </div>
-                <input id="slider-viscosity" type="range" min="0.001" max="1.0" step="0.005" value="0.05">
+                <input id="slider-viscosity" type="range" min="0.001" max="1.0" step="0.005" value="0.1">
 
                 <div class="flex justify-between items-center">
                     <label class="text-xs font-medium text-slate-300">Surface Tension</label>
-                    <span id="val-tension" class="text-xs code-font text-cyan-400">0.02</span>
+                    <span id="val-tension" class="text-xs code-font text-cyan-400">0.50</span>
                 </div>
-                <input id="slider-tension" type="range" min="0.001" max="1.0" step="0.005" value="0.02">
+                <input id="slider-tension" type="range" min="0.001" max="1.0" step="0.005" value="0.5">
 
                 <div class="flex justify-between items-center">
                     <label class="text-xs font-medium text-slate-300">Gravity Strength</label>
@@ -499,8 +499,10 @@
                             float lapW = viscCoeff * (h - r);
                             fViscosity += u_viscosity * (v2 - vel) * (50.0 / den2) * lapW;
 
-                            // Surface Tension Force
-                            fSurface -= u_surfaceTension * diff * (h - r) * 2.0;
+                            // Surface Tension (Cohesion) Force
+                            vec3 dirToNeighbor = -diff / r; 
+                            float cohesionKernel = pow(1.0 - (r / h), 5.0);
+                            fSurface += dirToNeighbor * u_surfaceTension * cohesionKernel * 50.0;
                         }
                     }
 
@@ -579,8 +581,8 @@
             texWidth: 128,          // 128x128 = 16,384 particles
             texHeight: 128,
             particleCount: 16384,
-            viscosity: 0.05,
-            surfaceTension: 0.02,
+            viscosity: 0.5,
+            surfaceTension: 0.2,
             stiffness: 50.0,
             restDensity: 100.0,
             gravity: -9.8,
